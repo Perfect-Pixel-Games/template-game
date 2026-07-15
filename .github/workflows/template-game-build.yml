@@ -1,0 +1,100 @@
+name: TemplateGame Build
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: template-game-build-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TARGET_DIR: C:\actions-runner\cargo-target\TemplateGame
+
+jobs:
+  main-source-branch-policy:
+    name: Main source branch policy
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: Require dev or hotfix source for main
+        shell: cmd
+        run: |
+          if not "%GITHUB_EVENT_NAME%"=="pull_request" exit /b 0
+          if not "%GITHUB_BASE_REF%"=="main" exit /b 0
+          if "%GITHUB_HEAD_REF%"=="dev" exit /b 0
+          if "%GITHUB_HEAD_REF:~0,7%"=="hotfix/" exit /b 0
+          echo Pull requests into main must come from dev or hotfix/*.
+          echo Actual source branch: %GITHUB_HEAD_REF%
+          exit /b 1
+
+  validate:
+    name: Validate TemplateGame on Windows
+    needs: main-source-branch-policy
+    runs-on: [self-hosted, Windows]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify Rust tools
+        shell: cmd
+        run: |
+          where cargo
+          where rustup
+
+      - name: Validate TemplateGame
+        shell: cmd
+        run: scripts\validate.cmd
+
+  package:
+    name: Package windows-x64 ${{ matrix.configuration }} on Windows
+    needs: validate
+    runs-on: [self-hosted, Windows]
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration:
+          - test
+          - shipping
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify Rust tools
+        shell: cmd
+        run: |
+          where cargo
+          where rustup
+
+      - name: Install selected Rust target
+        shell: cmd
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Package TemplateGame
+        shell: cmd
+        run: >-
+          scripts\package.cmd
+          --platform windows-x64
+          --configuration "${{ matrix.configuration }}"
+          --target game
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: template-game-windows-x64-${{ matrix.configuration }}
+          path: artifacts/packages/template-game/windows-x64/${{ matrix.configuration }}/*.tar.gz
+          if-no-files-found: error

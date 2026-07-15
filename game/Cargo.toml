@@ -24,6 +24,8 @@ foundation-editor-library = { path = "../engine/crates/foundation-editor-library
 foundation-runtime-library = { path = "../engine/crates/foundation-runtime-library", default-features = false }
 linkme = { version = "0.3", optional = true }
 
+[workspace]
+
 [profile.dev]
 opt-level = 0
 

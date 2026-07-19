@@ -70,6 +70,7 @@ pub fn run() -> AppExit {
 fn template_game_default_plugins(asset_root: String) -> impl PluginGroup {
     DefaultPlugins
         .build()
+        .set(foundation_log_plugin())
         .disable::<GilrsPlugin>()
         .set(AssetPlugin {
             file_path: asset_root,
@@ -122,11 +123,18 @@ impl Plugin for TemplateGamePlugin {
             roots: vec![asset_root()],
         })
         .register_type::<SpinningCube>()
-        .add_systems(Startup, scenes::open_initial_scene)
+        .add_systems(
+            Startup,
+            (
+                scenes::register_template_game_bsn_scenes,
+                scenes::open_initial_scene,
+            )
+                .chain(),
+        )
         .add_systems(
             Update,
             (
-                scenes::spawn_requested_template_game_scenes,
+                scenes::spawn_requested_template_game_scene_drivers,
                 exit_game_on_foundation_exit_request,
                 spin_cube.run_if(foundation_is_not_paused),
             ),

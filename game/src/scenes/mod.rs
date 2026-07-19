@@ -1,58 +1,73 @@
-//! TemplateGame BSN scene catalog.
+//! TemplateGame BSN asset scene catalog.
 //!
-//! Foundation owns the generic scene stack. TemplateGame owns these concrete scene
-//! keys and maps each key to one scene-specific Rust module.
-
-mod bevy_splash;
-mod credits;
-mod gameplay;
-mod main_menu;
-mod options_menu;
-mod pause_menu;
-mod pixel_perfect_splash;
+//! Foundation owns the generic scene stack and temporary `.bsn` asset bridge.
+//! TemplateGame owns stable scene keys and maps them to game-owned `.bsn` files.
 
 use bevy::prelude::*;
 use foundation_runtime_library::prelude::*;
 
-pub use bevy_splash::spawn_bevy_splash_scene;
-pub use credits::credits_scene;
-pub use gameplay::gameplay_level_scene;
-pub use main_menu::main_menu_scene;
-pub use options_menu::options_menu_scene;
-pub use pause_menu::pause_menu_scene;
-pub use pixel_perfect_splash::spawn_pixel_perfect_splash_scene;
-
 /// Scene key for the first startup splash screen.
-pub const PIXEL_PERFECT_SPLASH_SCENE: &str = "template-game/splash_pixel_perfect";
+pub const PIXEL_PERFECT_SPLASH_SCENE: &str = "splash_pixel_perfect";
 /// Scene key for the second startup splash screen.
-pub const BEVY_SPLASH_SCENE: &str = "template-game/splash_bevy";
+pub const BEVY_SPLASH_SCENE: &str = "splash_bevy";
 /// Scene key for the example main menu.
-pub const MAIN_MENU_SCENE: &str = "template-game/main_menu";
+pub const MAIN_MENU_SCENE: &str = "main_menu";
 /// Scene key for the stack-based options menu.
-pub const OPTIONS_MENU_SCENE: &str = "template-game/options_menu";
+pub const OPTIONS_MENU_SCENE: &str = "options_menu";
 /// Scene key for the scrolling credits scene.
-pub const CREDITS_SCENE: &str = "template-game/credits";
+pub const CREDITS_SCENE: &str = "credits";
 /// Scene key for the small sample gameplay level.
-pub const GAMEPLAY_LEVEL_SCENE: &str = "template-game/gameplay_level";
+pub const GAMEPLAY_LEVEL_SCENE: &str = "gameplay_level";
 /// Scene key for the gameplay pause menu.
-pub const PAUSE_MENU_SCENE: &str = "template-game/pause_menu";
+pub const PAUSE_MENU_SCENE: &str = "pause_menu";
+
+/// Registers TemplateGame scene-stack keys with their `.bsn` asset files.
+pub fn register_template_game_bsn_scenes(mut registry: ResMut<FoundationBsnSceneRegistry>) {
+    // Keep scene keys stable while moving authored scene structure into asset files.
+    registry.register_scene(
+        PIXEL_PERFECT_SPLASH_SCENE,
+        "scenes/pixel_perfect_splash.bsn",
+    );
+    registry.register_scene(BEVY_SPLASH_SCENE, "scenes/bevy_splash.bsn");
+    registry.register_scene(MAIN_MENU_SCENE, "scenes/main_menu.bsn");
+    registry.register_scene(OPTIONS_MENU_SCENE, "scenes/options_menu.bsn");
+    registry.register_scene(CREDITS_SCENE, "scenes/credits.bsn");
+    registry.register_scene(GAMEPLAY_LEVEL_SCENE, "scenes/gameplay_level.bsn");
+    registry.register_scene(PAUSE_MENU_SCENE, "scenes/pause_menu.bsn");
+}
 
 /// Opens the first TemplateGame scene-stack entry.
 pub fn open_initial_scene(mut scene_commands: MessageWriter<SceneCommand>) {
+    let startup_scene_commands = startup_scene_commands_or_default(
+        std::env::args().skip(1),
+        default_startup_scene_commands(),
+    )
+    .unwrap_or_else(|startup_scene_error| {
+        error!(
+            "Failed to parse startup scene override; using default startup scene: {startup_scene_error}"
+        );
+        default_startup_scene_commands()
+    });
+
+    for startup_scene_command in startup_scene_commands {
+        scene_commands.write(startup_scene_command);
+    }
+}
+
+fn default_startup_scene_commands() -> Vec<SceneCommand> {
     let startup_scene_source = SceneSource::bsn_scene(PIXEL_PERFECT_SPLASH_SCENE);
     let startup_scene_options = OpenSceneOptions::default()
         .with_key("startup-splash")
         .with_presentation(ScenePresentation::FULLSCREEN);
 
-    scene_commands.write(SceneCommand::Clear);
-    scene_commands.write(SceneCommand::open_with_options(
-        startup_scene_source,
-        startup_scene_options,
-    ));
+    vec![
+        SceneCommand::Clear,
+        SceneCommand::open_with_options(startup_scene_source, startup_scene_options),
+    ]
 }
 
-/// Spawns requested TemplateGame scenes from Foundation scene-load messages.
-pub fn spawn_requested_template_game_scenes(
+/// Spawns TemplateGame runtime scene drivers that cannot live in static `.bsn` files.
+pub fn spawn_requested_template_game_scene_drivers(
     mut commands: Commands,
     mut scene_requests: MessageReader<SceneLoadRequested>,
 ) {
@@ -64,36 +79,50 @@ pub fn spawn_requested_template_game_scenes(
 
         match scene_key.as_deref() {
             Some(PIXEL_PERFECT_SPLASH_SCENE) => {
-                spawn_pixel_perfect_splash_scene(&mut commands, scene_owner);
+                spawn_splash_driver(
+                    &mut commands,
+                    "Pixel Perfect",
+                    BEVY_SPLASH_SCENE,
+                    false,
+                    true,
+                    scene_owner,
+                );
             }
             Some(BEVY_SPLASH_SCENE) => {
-                spawn_bevy_splash_scene(&mut commands, scene_owner);
-            }
-            Some(MAIN_MENU_SCENE) => {
-                commands.spawn_scene(main_menu_scene(scene_owner));
-            }
-            Some(OPTIONS_MENU_SCENE) => {
-                commands.spawn_scene(options_menu_scene(scene_owner));
-            }
-            Some(CREDITS_SCENE) => {
-                commands.spawn_scene(credits_scene(scene_owner));
-            }
-            Some(GAMEPLAY_LEVEL_SCENE) => {
-                commands.spawn_scene(gameplay_level_scene(scene_owner));
-            }
-            Some(PAUSE_MENU_SCENE) => {
-                commands.spawn_scene(pause_menu_scene(scene_owner));
+                spawn_splash_driver(
+                    &mut commands,
+                    "Bevy",
+                    MAIN_MENU_SCENE,
+                    true,
+                    false,
+                    scene_owner,
+                );
             }
             Some(foundation_runtime_scene_key)
                 if foundation_runtime_scene_key.starts_with("foundation/") => {}
-            Some(unknown_scene_key) => {
-                warn!("Unknown TemplateGame scene requested: {unknown_scene_key}");
-            }
-            None => {
-                warn!("TemplateGame received a scene source without a scene key");
-            }
+            _ => {}
         }
     }
+}
+
+fn spawn_splash_driver(
+    commands: &mut Commands,
+    splash_name: &'static str,
+    next_scene_key: &'static str,
+    reset_stack_for_next_scene: bool,
+    replace_current_scene: bool,
+    scene_owner: SceneOwner,
+) {
+    let splash_timings = FoundationSplashTimings::new(0.75, 1.0, 0.75);
+    let splash_screen = FoundationSplashScreen {
+        timings: splash_timings,
+        font_size: 72.0,
+        next_scene_key: next_scene_key.to_string(),
+        reset_stack_for_next_scene,
+        replace_current_scene,
+    };
+
+    commands.spawn((Name::new(splash_name), splash_screen, scene_owner));
 }
 
 fn scene_source_key(scene_source: &SceneSource) -> Option<String> {
@@ -109,15 +138,41 @@ mod tests {
 
     #[test]
     fn required_scene_keys_are_stable() {
+        assert_eq!(PIXEL_PERFECT_SPLASH_SCENE, "splash_pixel_perfect");
+        assert_eq!(BEVY_SPLASH_SCENE, "splash_bevy");
+        assert_eq!(MAIN_MENU_SCENE, "main_menu");
+        assert_eq!(OPTIONS_MENU_SCENE, "options_menu");
+        assert_eq!(CREDITS_SCENE, "credits");
+        assert_eq!(GAMEPLAY_LEVEL_SCENE, "gameplay_level");
+        assert_eq!(PAUSE_MENU_SCENE, "pause_menu");
+    }
+
+    #[test]
+    fn default_startup_scene_opens_pixel_perfect_splash() {
+        let startup_commands = default_startup_scene_commands();
+
         assert_eq!(
-            PIXEL_PERFECT_SPLASH_SCENE,
-            "template-game/splash_pixel_perfect"
+            startup_commands,
+            vec![
+                SceneCommand::Clear,
+                SceneCommand::open_with_options(
+                    SceneSource::bsn_scene(PIXEL_PERFECT_SPLASH_SCENE),
+                    OpenSceneOptions::default()
+                        .with_key("startup-splash")
+                        .with_presentation(ScenePresentation::FULLSCREEN),
+                ),
+            ]
         );
-        assert_eq!(BEVY_SPLASH_SCENE, "template-game/splash_bevy");
-        assert_eq!(MAIN_MENU_SCENE, "template-game/main_menu");
-        assert_eq!(OPTIONS_MENU_SCENE, "template-game/options_menu");
-        assert_eq!(CREDITS_SCENE, "template-game/credits");
-        assert_eq!(GAMEPLAY_LEVEL_SCENE, "template-game/gameplay_level");
-        assert_eq!(PAUSE_MENU_SCENE, "template-game/pause_menu");
+    }
+
+    #[test]
+    fn scene_registry_maps_keys_to_bsn_assets() {
+        let mut registry = FoundationBsnSceneRegistry::default();
+        registry.register_scene(MAIN_MENU_SCENE, "scenes/main_menu.bsn");
+
+        assert_eq!(
+            registry.resolve_scene_path(MAIN_MENU_SCENE),
+            "scenes/main_menu.bsn"
+        );
     }
 }

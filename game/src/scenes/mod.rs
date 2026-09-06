@@ -120,6 +120,7 @@ fn spawn_splash_driver(
         next_scene_key: next_scene_key.to_string(),
         reset_stack_for_next_scene,
         replace_current_scene,
+        load_mode: SceneLoadMode::default(),
     };
 
     commands.spawn((Name::new(splash_name), splash_screen, scene_owner));
